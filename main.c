@@ -24,6 +24,8 @@
 #define MAX30100_RID    0xFE    // Revision ID
 #define MAX30100_PID    0xFF    // Part ID
 
+unsigned int RED_DATA, IR_DATA;
+
 //==============================================================================
 // Init USCI_B0 in I2C mode
 // P3.1 - SCL
@@ -55,7 +57,6 @@ void i2c_init(void) {
 
 //==============================================================================
 // I2C write one byte of datta
-// slave_id - slave ID to be sent
 // addr     - address to which to be written data
 // data     - data to be written
 //==============================================================================
@@ -83,11 +84,10 @@ void i2c_write(unsigned char addr, unsigned char data) {
 }
 
 //==============================================================================
-// I2C read one byte of datta
-// slave_id - slave ID to be sent
-// addr     - address from wrich data to be read
+// I2C read one byte of data
+// addr     - address from which data to be read
 // 
-// return data
+// return   -> data
 //==============================================================================
 unsigned char i2c_read(unsigned char addr) {
   unsigned char data;
@@ -115,6 +115,51 @@ unsigned char i2c_read(unsigned char addr) {
   return data;
 }
 
+//==============================================================================
+// I2C read 4 bytes of data
+// addr     - address from which data to be read
+// 
+// return   -> data
+//==============================================================================
+void i2c_read4(unsigned char addr) {
+  
+  UCB0CTL1 |= UCTR;                    // Transmit
+  UCB0CTL1 |= UCTXSTT;                 // Generate START condition
+  while(UCB0IFG & UCTXIFG == 0x00);    // check bit for 1 - wait for START, SLAVE ID to be sent
+  
+  UCB0TXBUF = addr;                    // write addr to the buffer
+  while(UCB0CTL1 & UCTXSTT != 0x00);   // check bit for 0 - wait for ACK by slave
+  while(UCB0IFG & UCTXIFG == 0x00);    // check bit for 1 - wait for ADDR to be sent
+  __delay_cycles(100);
+  
+  UCB0CTL1 &= ~UCTR;                   // Receive
+  UCB0CTL1 |= UCTXSTT;                 // Generate START condition
+  while(UCB0IFG & UCTXIFG == 0x00);    // check bit for 1 - wait for DATA to be received
+  __delay_cycles(100);
+  
+  IR_DATA = UCB0RXBUF << 8;            // Read 8 MSB of IR adc data
+  
+  while(UCB0IFG & UCTXIFG == 0x00);    // check bit for 1 - wait for DATA to be received
+  __delay_cycles(100);
+  
+  IR_DATA += UCB0RXBUF;                // Read 8 LSB of IR adc data
+  
+  while(UCB0IFG & UCTXIFG == 0x00);    // check bit for 1 - wait for DATA to be received
+  __delay_cycles(100);
+  
+  RED_DATA = UCB0RXBUF << 8;           // Read 8 MSB of RED adc data
+  
+  while(UCB0IFG & UCTXIFG == 0x00);    // check bit for 1 - wait for DATA to be received
+  __delay_cycles(100);
+  
+  RED_DATA += UCB0RXBUF;               // Read 8 LSB of RED adc data
+  
+  UCB0CTL1 |= UCTXSTP + UCTXNACK;      // send NACK and STOP condition
+  while(UCB0CTL1 & UCTXSTP != 0x00);   // check bit for 0 - wait for STOP to be generated
+  __delay_cycles(100);
+
+}
+
 int main( void )
 {
   // Stop watchdog timer to prevent time out reset
@@ -134,21 +179,28 @@ int main( void )
   TA0CTL |= TASSEL__SMCLK + ID_0 + MC_1 + TACLR;  // SMCLK source, UP mode, clear timer
 */
   
-  unsigned char PART_ID;
+  unsigned char PART_ID, PART_RID;
   
-  i2c_init();                      // init I2C module for MAX30100
+  i2c_init();                         // init I2C module for MAX30100
   
-  //i2c_write(MAX30100_ID, MAX30100_IE, 0xFF);    // Write to MAX30100 interupt enable register
-  //__delay_cycles(100);
+  // Configure MAX30100
+  i2c_write(MAX30100_MC, 0x03);       // enable SPO2 mode
+  i2c_write(MAX30100_LEDC, 0x33);     // set red and ir leds current to 11mA
   
-  i2c_write(MAX30100_MC, 0x03);    // enable SPO2 mode
-  
-  i2c_write(MAX30100_LEDC, 0x33);  // set red and ir leds current to 11mA
-  
-  PART_ID = i2c_read(MAX30100_PID);// Read MAX30100 part id
-  //PART_ID = i2c_read(MAX30100_ID, MAX30100_IE); // Read MAX30100 interrupt enable
+  // Read part id and revision id to verify the i2c and max30100 are working properly
+  PART_ID = i2c_read(MAX30100_PID);   // Read MAX30100 part id
+  PART_RID = i2c_read(MAX30100_RID);  // Read MAX30100 part revision id
   
   PART_ID++;
-
+  PART_RID++;
+  
+  // Clear FIFO pointers
+  i2c_write(MAX30100_FWP, 0x00);      // Clear FIFO write pointer
+  i2c_write(MAX30100_OVC, 0x00);      // Clear overflow counter
+  i2c_write(MAX30100_FRP, 0x00);      // Clear FIFO read pointer
+  
+  i2c_read4(MAX30100_FDR);            // Read one sample from FIFO
+  
+  
   return 0;
-}
+} 

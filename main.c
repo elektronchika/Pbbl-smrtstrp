@@ -59,7 +59,7 @@ void i2c_init(void) {
 // addr     - address to which to be written data
 // data     - data to be written
 //==============================================================================
-void i2c_write(unsigned char slave_id, unsigned char addr, unsigned char data) {
+void i2c_write(unsigned char addr, unsigned char data) {
   //UCB0I2CSA = slave_id;                // Set slave ID
   
   UCB0CTL1 |= UCTR;                    // Transmit
@@ -89,21 +89,29 @@ void i2c_write(unsigned char slave_id, unsigned char addr, unsigned char data) {
 // 
 // return data
 //==============================================================================
-unsigned char i2c_read(unsigned char slave_id, unsigned char addr) {
+unsigned char i2c_read(unsigned char addr) {
   unsigned char data;
-  //UCB0I2CSA = slave_id;          // Set slave ID
-  UCB0CTL1 |= UCTR;              // Transmit
-  UCB0CTL1 |= UCTXSTT;           // Generate START condition
+  //UCB0I2CSA = slave_id;                // Set slave ID
+  
+  UCB0CTL1 |= UCTR;                    // Transmit
+  UCB0CTL1 |= UCTXSTT;                 // Generate START condition
   while(UCB0IFG & UCTXIFG == 0x00);    // check bit for 1 - wait for START, SLAVE ID to be sent
-  UCB0TXBUF = addr;              // write addr to the buffer
+  
+  UCB0TXBUF = addr;                    // write addr to the buffer
   while(UCB0CTL1 & UCTXSTT != 0x00);   // check bit for 0 - wait for ACK by slave
   while(UCB0IFG & UCTXIFG == 0x00);    // check bit for 1 - wait for ADDR to be sent
-  UCB0CTL1 |= UCTXSTT;           // Generate START condition
-  UCB0CTL1 &= ~UCTR;             // Receive
-  while(UCB0IFG & UCTXIFG == 0x00);    // check bit for 1 - wait for DATA to be sent
-  UCB0CTL1 |= UCTXSTP + UCTXNACK;           // send NACK and STOP condition
+  __delay_cycles(100);
+  
+  UCB0CTL1 &= ~UCTR;                   // Receive
+  UCB0CTL1 |= UCTXSTT;                 // Generate START condition
+  while(UCB0IFG & UCTXIFG == 0x00);    // check bit for 1 - wait for DATA to be received
+  __delay_cycles(100);
+  
+  UCB0CTL1 |= UCTXSTP + UCTXNACK;      // send NACK and STOP condition
   while(UCB0CTL1 & UCTXSTP != 0x00);   // check bit for 0 - wait for STOP to be generated
-  data = UCB0RXBUF;              // read receive buffer - this is the read data
+  __delay_cycles(100);
+  
+  data = UCB0RXBUF;                    // read receive buffer - this is the read data
   return data;
 }
 
@@ -128,17 +136,19 @@ int main( void )
   
   unsigned char PART_ID;
   
-  i2c_init();                    // init I2C module for MAX30100
+  i2c_init();                      // init I2C module for MAX30100
   
   //i2c_write(MAX30100_ID, MAX30100_IE, 0xFF);    // Write to MAX30100 interupt enable register
   //__delay_cycles(100);
   
-  i2c_write(MAX30100_ID, MAX30100_MC, 0x03);    // enable SPO2 mode
+  i2c_write(MAX30100_MC, 0x03);    // enable SPO2 mode
   
-  i2c_write(MAX30100_ID, MAX30100_LEDC, 0x11);  // set red and ir leds current to 4,4mA
+  i2c_write(MAX30100_LEDC, 0x33);  // set red and ir leds current to 11mA
   
-  //PART_ID = i2c_read(MAX30100_ID, MAX30100_PID);// Read MAX30100 part id
+  PART_ID = i2c_read(MAX30100_PID);// Read MAX30100 part id
   //PART_ID = i2c_read(MAX30100_ID, MAX30100_IE); // Read MAX30100 interrupt enable
+  
+  PART_ID++;
 
   return 0;
 }
